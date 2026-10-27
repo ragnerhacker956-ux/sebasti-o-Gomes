@@ -1,0 +1,6 @@
+{
+  "name": "DioGis - Sistema de Croquis de Localização",
+  "description": "Sistema profissional DioGis para geração de croquis de localização e plantas cadastrais com imagens de satélite HD, coordenadas UTM WGS84, grelha topográfica, carimbo técnico oficial e exportação em PDF de alta qualidade.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
