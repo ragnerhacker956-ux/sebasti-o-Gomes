@@ -83,12 +83,24 @@ export interface ReferencePoint {
   description?: string;
 }
 
+/** Contorno independente de um edifício identificado no mapa. */
+export interface BuildingFootprint {
+  id: string;
+  name?: string;
+  source: 'openstreetmap' | 'manual' | 'ai';
+  coordinates: LatLng[];
+  osmId?: string;
+  detectedAt?: string;
+}
+
 export interface CroquiProject {
   id: string;
   name: string;
   updatedAt: string;
   vertices: LatLng[];
   referencePoints: ReferencePoint[];
+  /** Contornos de edifícios; opcional para manter compatibilidade com projectos antigos. */
+  buildings?: BuildingFootprint[];
   stamp: StampData;
   layout: LayoutSettings;
 }
