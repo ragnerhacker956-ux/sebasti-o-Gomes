@@ -5,7 +5,7 @@ import {
   useMap,
   MapMouseEvent,
 } from '@vis.gl/react-google-maps';
-import { LatLng, CroquiProject, UTMCoordinate } from '../types/croqui';
+import { LatLng, CroquiProject, UTMCoordinate, BuildingFootprint } from '../types/croqui';
 import { latLngToUtm, utmToLatLng, distanceUtm } from '../utils/utm';
 import {
   Search,
@@ -30,10 +30,13 @@ import {
   X,
   Lock,
   ShieldAlert,
+  WandSparkles,
 } from 'lucide-react';
 import { PlacesSearchBar } from './PlacesSearchBar';
 import { simplifyDrawnPolygon } from '../utils/simplify';
 import { useLicense } from '../context/LicenseContext';
+import { findBuildingAtPoint } from '../services/buildingDetection';
+import { BuildingFootprintsLayer } from './BuildingFootprintsLayer';
 
 interface MapEditorProps {
   apiKey: string;
@@ -263,7 +266,10 @@ export const MapEditor: React.FC<MapEditorProps> = ({
 }) => {
   const { isLicenseActive, checkLicenseBeforeAction } = useLicense();
   const [mapType, setMapType] = useState<'satellite' | 'hybrid' | 'roadmap' | 'terrain'>('hybrid');
-  const [activeTool, setActiveTool] = useState<'select' | 'add_vertex' | 'reference' | 'pencil'>('select');
+  const [activeTool, setActiveTool] = useState<'select' | 'add_vertex' | 'reference' | 'pencil' | 'building_selector'>('select');
+  const [buildingPreview, setBuildingPreview] = useState<BuildingFootprint | null>(null);
+  const [buildingLoading, setBuildingLoading] = useState(false);
+  const [buildingMessage, setBuildingMessage] = useState<string | null>(null);
   const [cursorPos, setCursorPos] = useState<{ lat: number; lng: number } | null>(null);
   const [cursorUtm, setCursorUtm] = useState<{ easting: number; northing: number } | null>(null);
   const [nudgeStep, setNudgeStep] = useState<number>(5); // meters
@@ -455,11 +461,35 @@ export const MapEditor: React.FC<MapEditorProps> = ({
     if (metrics.coordinates.length === 0) return;
   }, [metrics]);
 
-  // Handle map click for adding vertices or reference points
+  // Handle map click for vertices, reference points and the building selector.
   const handleMapClick = async (e: MapMouseEvent) => {
     if (activeTool === 'pencil') return;
     if (!e.detail.latLng) return;
     const { lat, lng } = e.detail.latLng;
+
+    if (activeTool === 'building_selector') {
+      if (!isLicenseActive) {
+        await checkLicenseBeforeAction('A selecção automática de edifícios');
+        return;
+      }
+      setBuildingLoading(true);
+      setBuildingMessage('A procurar o contorno do edifício nos dados geográficos…');
+      setBuildingPreview(null);
+      try {
+        const building = await findBuildingAtPoint({ lat, lng });
+        setBuildingPreview(building);
+        setBuildingMessage(
+          building
+            ? 'Contorno encontrado. Confirme para adicionar ao projecto.'
+            : 'Não foi encontrado um contorno neste ponto. Experimente clicar mais perto do centro do edifício ou tentar novamente.'
+        );
+      } catch (error) {
+        setBuildingMessage(error instanceof Error ? error.message : 'Não foi possível consultar os dados geográficos.');
+      } finally {
+        setBuildingLoading(false);
+      }
+      return;
+    }
 
     if (activeTool === 'add_vertex') {
       if (!isLicenseActive) {
@@ -685,6 +715,26 @@ export const MapEditor: React.FC<MapEditorProps> = ({
           <div className="flex items-center gap-1 bg-slate-900 p-1 rounded border border-slate-700">
             <button
               type="button"
+              onClick={async () => {
+                if (!isLicenseActive) {
+                  await checkLicenseBeforeAction('A selecção automática de edifícios');
+                  return;
+                }
+                setBuildingPreview(null);
+                setBuildingMessage('Clique no telhado de uma casa ou edifício no mapa.');
+                setActiveTool(activeTool === 'building_selector' ? 'select' : 'building_selector');
+              }}
+              className={`px-2 py-1 rounded flex items-center gap-1 font-semibold ${
+                activeTool === 'building_selector'
+                  ? 'bg-fuchsia-500 text-white ring-2 ring-fuchsia-300'
+                  : 'bg-slate-800 text-fuchsia-200 hover:bg-slate-700'
+              }`}
+              title="Seleccionar um edifício através dos contornos disponíveis no OpenStreetMap"
+            >
+              <WandSparkles size={13} /> Varinha Selector
+            </button>
+            <button
+              type="button"
               onClick={() => setActiveTool('select')}
               className={`px-2 py-1 rounded flex items-center gap-1 ${
                 activeTool === 'select' ? 'bg-cyan-600 text-white' : 'text-slate-300 hover:text-white'
@@ -807,6 +857,12 @@ export const MapEditor: React.FC<MapEditorProps> = ({
             {/* Projection bridge for pixel <-> geographic coordinates */}
             <MapProjectionBridge onProjectionUpdate={handleProjectionUpdate} />
 
+            {/* Contornos de edifícios independentes do lote cadastral. */}
+            <BuildingFootprintsLayer
+              buildings={project.buildings || []}
+              preview={buildingPreview}
+            />
+
             {/* Draw Polygon Boundary */}
             <PolygonLayer
               vertices={project.vertices}
@@ -825,6 +881,69 @@ export const MapEditor: React.FC<MapEditorProps> = ({
               referencePoints={project.referencePoints}
             />
           </Map>
+
+          {activeTool === 'building_selector' && (
+            <div className="absolute top-3 right-3 z-20 w-[min(340px,92%)] rounded-xl border border-fuchsia-400/60 bg-slate-950/95 p-3 text-xs text-white shadow-2xl">
+              <div className="flex items-center gap-2 font-bold text-fuchsia-200">
+                <WandSparkles size={15} /> Varinha Selector
+              </div>
+              <p className="mt-2 text-slate-200">
+                {buildingLoading ? 'A consultar o OpenStreetMap…' : buildingMessage || 'Clique no telhado de uma casa ou edifício.'}
+              </p>
+              {buildingPreview && (
+                <p className="mt-1 text-emerald-300">
+                  Pré-visualização pronta: {buildingPreview.coordinates.length} pontos do contorno.
+                </p>
+              )}
+              <div className="mt-3 flex flex-wrap gap-2">
+                {buildingPreview && (
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      if (!isLicenseActive) {
+                        await checkLicenseBeforeAction('A gravação de edifícios');
+                        return;
+                      }
+                      onUpdateProject((prev) => ({
+                        ...prev,
+                        buildings: [...(prev.buildings || []), buildingPreview],
+                      }));
+                      setBuildingPreview(null);
+                      setBuildingMessage('Edifício adicionado. Clique noutro edifício para continuar.');
+                    }}
+                    className="rounded-lg bg-emerald-500 px-3 py-1.5 font-bold text-slate-950 hover:bg-emerald-400"
+                  >
+                    Confirmar
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setBuildingPreview(null);
+                    setBuildingMessage('Clique no telhado de uma casa ou edifício para tentar novamente.');
+                  }}
+                  className="rounded-lg bg-slate-700 px-3 py-1.5 hover:bg-slate-600"
+                  disabled={buildingLoading}
+                >
+                  {buildingPreview ? 'Tentar outro' : 'Tentar novamente'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setBuildingPreview(null);
+                    setBuildingMessage(null);
+                    setActiveTool('select');
+                  }}
+                  className="rounded-lg border border-slate-600 px-3 py-1.5 text-slate-200 hover:bg-slate-800"
+                >
+                  Cancelar
+                </button>
+              </div>
+              <p className="mt-2 text-[10px] text-slate-400">
+                Usa contornos cartográficos disponíveis; nem todas as casas estão mapeadas. Não é detecção visual por IA.
+              </p>
+            </div>
+          )}
 
           {/* Read-Only Notice Overlay when license is inactive */}
           {!isLicenseActive && (
