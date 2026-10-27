@@ -165,6 +165,7 @@ export function createBlankProject(
     updatedAt: new Date().toISOString(),
     vertices: [p1, p2, p3, p4],
     referencePoints: [],
+    buildings: [],
     stamp: {
       title: 'CROQUIS DE LOCALIZAÇÃO',
       owner: 'Novo Proprietário / Requerente',
@@ -227,6 +228,14 @@ export function sanitizeProjectSchema(p: any): CroquiProject {
     updatedAt: p.updatedAt || new Date().toISOString(),
     vertices: Array.isArray(p.vertices) && p.vertices.length >= 3 ? p.vertices : PRESET_TALATONA.vertices,
     referencePoints: Array.isArray(p.referencePoints) ? p.referencePoints : [],
+    buildings: Array.isArray(p.buildings)
+      ? p.buildings.filter((b: any) =>
+          b && typeof b.id === 'string' &&
+          Array.isArray(b.coordinates) &&
+          b.coordinates.length >= 3 &&
+          b.coordinates.every((pt: any) => Number.isFinite(pt?.lat) && Number.isFinite(pt?.lng))
+        )
+      : [],
     stamp: {
       title: p.stamp?.title || 'CROQUIS DE LOCALIZAÇÃO',
       owner: p.stamp?.owner || '',
