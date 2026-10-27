@@ -80,6 +80,23 @@ export function exportPolygonGeoJson(project: CroquiProject, coordinates: UTMCoo
           coordinates: [ring],
         },
       },
+      ...(project.buildings || []).map((building) => {
+        const ring = building.coordinates.map((pt) => [pt.lng, pt.lat]);
+        ring.push([building.coordinates[0].lng, building.coordinates[0].lat]);
+        return {
+          type: 'Feature',
+          properties: {
+            tipo: 'edificio',
+            nome: building.name || 'Edifício seleccionado',
+            origem: building.source,
+            osm_id: building.osmId || null,
+          },
+          geometry: {
+            type: 'Polygon',
+            coordinates: [ring],
+          },
+        };
+      }),
       ...coordinates.map((c) => ({
         type: 'Feature',
         properties: {
